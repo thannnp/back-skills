@@ -514,10 +514,16 @@ telescope_entries ||--o{ telescope_entries_tags : "tagged"
 | `tasks.sale_admin_id` | `horoacademy.admins.id` |
 | `tasks.agent_admin_id` | `horoacademy.admins.id` |
 | `tasks.ceremony_master_id` | `horoacademy.admins.id` |
+| `sinsae_commission_lists.ceremony_master_id` | `horoacademy.admins.id` |
 | `task_payments.bank_id` | `horoacademy.banks.id` |
 | `admin_social_profiles.admin_id` | `horoacademy.admins.id` |
 | `sessions.user_id` | `horoacademy.users.id` |
 | `resource_accesses.admin_id` | `horoacademy.admins.id` |
+
+Audit/actor columns across many tables (`created_by`, `updated_by`, `deleted_by`,
+`assigned_by`, `changed_by_id`, `message_logs.sent_by`, `oauth_*.user_id`) also hold
+backoffice `admins.id`/`users.id` values but are application-level only and not all
+listed individually — treat any `*_by`/`*_id` actor column as a likely cross-DB ref.
 
 ---
 
