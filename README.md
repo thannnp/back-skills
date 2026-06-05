@@ -1,42 +1,42 @@
 # back-skills
 
-Agent skills สำหรับงาน horoacademy ติดตั้งผ่าน [`npx skills`](https://github.com/vercel-labs/skills)
+Agent skills for horoacademy, installable via [`npx skills`](https://github.com/vercel-labs/skills).
 
-## ติดตั้ง
+## Install
 
 ```bash
 npx skills add thannnp/back-skills
 ```
 
-คำสั่งนี้จะสแกนหา skill ทั้งหมดใน repo แล้วขึ้นเมนูให้เลือกติดตั้ง
+This scans the repo for all skills and shows an interactive menu to pick which ones to install.
 
-ดูรายการ skill ที่มีโดยยังไม่ติดตั้ง:
+List available skills without installing:
 
 ```bash
 npx skills add thannnp/back-skills --list
 ```
 
-ติดตั้งเฉพาะ skill ที่ต้องการ:
+Install a specific skill only:
 
 ```bash
 npx skills add thannnp/back-skills --skill horo-db
 ```
 
-## Skills ที่มี
+## Available skills
 
-| Skill | หน้าที่ |
+| Skill | Purpose |
 |---|---|
-| `horo-db` | ผู้ช่วยตอบคำถามเรื่องโครงสร้างและความสัมพันธ์ของฐานข้อมูล horoacademy สองตัว (`horoacademy-backoffice` และ `horoacademy-wpe-service`) — มีตารางอะไร, column อะไร, เชื่อมกันยังไง, cross-DB references, polymorphic relations |
+| `horo-db` | Assistant for answering questions about the structure and relationships of the two horoacademy databases (`horoacademy-backoffice` and `horoacademy-wpe-service`) — which tables exist, what columns they have, how they relate, cross-DB references, and polymorphic relations. |
 
-## โครงสร้าง repo
+## Repo structure
 
 ```
 back-skills/
 └── skills/
     └── horo-db/
-        ├── SKILL.md                              # instruction (อังกฤษ, ตอบผู้ใช้เป็นไทย)
+        ├── SKILL.md                              # instructions (English; replies to the user in Thai)
         ├── HORO_BACKOFFICE_DATABASE_DIAGRAM.md   # Mermaid ER diagram — backoffice
         └── WPE_SERVICE_DATABASE_DIAGRAM.md       # Mermaid ER diagram — wpe-service
 ```
 
-เพิ่ม skill ใหม่ได้โดยสร้างโฟลเดอร์ `skills/<ชื่อ>/SKILL.md` แล้ว `npx skills` จะเจอเอง
+To add a new skill, create `skills/<name>/SKILL.md` and `npx skills` will discover it automatically.
