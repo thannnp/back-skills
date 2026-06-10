@@ -26,6 +26,15 @@ Scope is deliberately narrow: **it only adjusts payment state** (the
 > All prompts to the user MUST be written in **Thai**. This file is in English; the
 > questions you ask the user are in Thai (see the exact wording below).
 
+## Response style (important)
+
+- **Keep every reply short.** Ask only what the flow needs, report only the result.
+- The **single purpose** of this skill is to **update the payment status to what the user
+  wants** — stay on that. Do not volunteer explanations, background, or extra options the
+  user didn't ask for.
+- If the user asks something **unrelated** to updating the payment status, do not answer
+  the unrelated part — gently steer back to the task (in Thai).
+
 ## Domain model (what "payment status" means here)
 
 Two tables in the **backoffice** DB are involved:
@@ -56,13 +65,16 @@ The bundled scripts already encode this derivation; you don't need to reimplemen
 
 ## Interaction flow
 
-Ask these in order, **in Thai**, using the AskUserQuestion tool. Skip any question the
-user already answered in their invocation (e.g. they typed the id, or said "ทำให้ failed
-ผ่าน webhook").
-
-### Step 1 — UUID
-If the user passed a UUID with the command, use it. Otherwise ask:
+### Step 1 — UUID (ALWAYS ask first, before anything else)
+The **moment this skill is invoked**, ignore everything else and ask the user for the
+UUID first. Do **not** resolve the environment, look for containers, or run any other
+step until you have the UUID. Even if the user already typed a UUID in their invocation,
+ask them to confirm it:
 > "ใส่ UUID ที่ต้องการปรับสถานะมาได้เลย (payment link id หรือ transaction id)"
+
+Once you have the UUID, continue with the remaining steps below, **in Thai**, using the
+AskUserQuestion tool. Skip any later question the user already answered in their
+invocation (e.g. they said "ทำให้ failed ผ่าน webhook").
 
 ### Step 2 — Type (ask every time unless already stated)
 > "UUID นี้เป็น type ไหน?"
@@ -86,7 +98,25 @@ If the user asks for `pending` / `expired` / `reversed` in webhook mode, tell th
 that test cards cannot produce those statuses through a charge, and offer **direct** mode
 instead.
 
-## Step 5 — Resolve the environment (always, before mutating)
+## Step 5 — Summary & confirm (always, before touching anything)
+
+Before resolving the environment or mutating any data, show the user a **short Thai
+summary** of everything collected and ask them to **confirm**. Do this with the
+AskUserQuestion tool. Do **not** proceed to Step 6 until the user picks `ยืนยัน`.
+
+Summary format (fill in the collected values):
+> "สรุปก่อนทำนะครับ:
+> • UUID: `<uuid>`
+> • type: `<payment link | transaction>`
+> • mode: `<direct | webhook>`
+> • status: `<status>`
+> จะดำเนินการเลยไหม?"
+> options: `ยืนยัน` / `ยกเลิก`
+
+- If the user picks `ยกเลิก`, stop and do nothing (no DB change).
+- If they want to change a value, go back to the relevant step, then re-summarise.
+
+## Step 6 — Resolve the environment (always, before mutating)
 
 1. **Find the backoffice container** (do not hardcode the name):
    ```bash
@@ -103,7 +133,7 @@ instead.
    is not local so no data will be changed. Only continue if the user explicitly passed
    `--force`.
 
-## Step 6 — Run the chosen mode
+## Step 7 — Run the chosen mode
 
 The scripts read their inputs from **environment variables** passed via `docker exec -e`,
 so you never edit the script files — just set the vars. Copy the script into the container
@@ -126,7 +156,7 @@ docker exec \
 ```
 
 The script prints `TXN_ID=… TXN_STATUS=…` and `LINK_ID=… LINK_STATUS=… USAGE=n/m`
-(or `NOOP=already_successful` / `ERR=…`). Use that for the Step 7 report.
+(or `NOOP=already_successful` / `ERR=…`). Use that for the Step 8 report.
 
 ### Webhook mode (`successful` / `failed` only)
 
@@ -146,7 +176,7 @@ docker exec \
 The script prints `TXN_ID`, `CHARGE_ID`, `CHARGE_STATUS`, and `EVENT_ID`. POST that
 `EVENT_ID` to the webhook as described in `references/webhook.md`.
 
-## Step 7 — Verify and report
+## Step 8 — Verify and report
 
 After either mode, read back the final state and report it to the user **in Thai** (a small
 before → after summary): the transaction status, the link status, and
