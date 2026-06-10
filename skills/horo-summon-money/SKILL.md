@@ -16,8 +16,8 @@ description: >-
 # horo-summon-money
 
 A **local-only testing helper** that forces the payment status of a horoacademy
-**payment link** or **payment transaction**. It exists so you can QA payment flows
-without going through a real Omise checkout.
+**payment link** or **payment transaction**, so you can QA payment flows without going
+through a real Omise checkout.
 
 Scope is deliberately narrow: **it only adjusts payment state** (the
 `payment_transactions` row and, derived from it, the `payment_links` row). It does
@@ -32,31 +32,33 @@ Two tables in the **backoffice** DB are involved:
 
 | Table | Model | Holds |
 |---|---|---|
-| `payment_links` | `\App\Models\PaymentLink` | the link itself — `price`, `current_usage_count`, `max_usage_count`, `is_unlimited`, `status` (`active` / `done` / `expired`) |
-| `payment_transactions` | `\App\Models\PaymentTransaction` | one actual payment — `amount`, `paid_at`, `method`, `provider_id`, `status` (`successful` / `pending` / `failed` / `expired` / `reversed`) |
+| `payment_links` | `\App\Models\PaymentLink` | the link — `price`, `current_usage_count`, `max_usage_count`, `is_unlimited`, `status` (`active` / `done` / `expired`) |
+| `payment_transactions` | `\App\Models\PaymentTransaction` | one payment — `amount`, `paid_at`, `method`, `status` (`successful` / `pending` / `failed` / `expired` / `reversed`) |
 
 A link has many transactions, joined polymorphically:
 `payment_transactions.model_type = 'App\Models\PaymentLink'` and
 `payment_transactions.model_id = <payment_link id>`.
 
-**Both ids are UUIDs** and cannot be told apart by shape — that is why the skill
-asks the user which type they gave (see Step 2).
+**Both ids are UUIDs** and cannot be told apart by shape — that is why Step 2 asks the
+user which type they gave.
 
 How the link status derives from the transaction (mirrors production
 `OmiseService::updateOmisePayment`):
 
 - transaction → `successful`  ⇒  call `$link->incrementUsage()`, which increments
-  `current_usage_count` and flips `status` to `done` once it reaches
-  `max_usage_count` (unless `is_unlimited`).
+  `current_usage_count` and flips `status` to `done` once it reaches `max_usage_count`
+  (unless `is_unlimited`).
 - transaction → any other status  ⇒  the link is **not touched** (usage unchanged).
-- Usage is **never decremented** — re-running with a non-successful status will not
-  roll a `done` link back.
+- Usage is **never decremented** — re-running with a non-successful status will not roll
+  a `done` link back.
+
+The bundled scripts already encode this derivation; you don't need to reimplement it.
 
 ## Interaction flow
 
-Ask these in order, **in Thai**, using the AskUserQuestion tool. Skip any question
-the user already answered in their invocation (e.g. they typed the id, or said
-"ทำให้ failed ผ่าน webhook").
+Ask these in order, **in Thai**, using the AskUserQuestion tool. Skip any question the
+user already answered in their invocation (e.g. they typed the id, or said "ทำให้ failed
+ผ่าน webhook").
 
 ### Step 1 — UUID
 If the user passed a UUID with the command, use it. Otherwise ask:
@@ -65,9 +67,6 @@ If the user passed a UUID with the command, use it. Otherwise ask:
 ### Step 2 — Type (ask every time unless already stated)
 > "UUID นี้เป็น type ไหน?"
 > options: `payment link` / `transaction`
-
-Then **verify it exists** in the matching table (see Step 5). If not found, stop and
-tell the user in Thai that the id was not found in that table.
 
 ### Step 3 — Mode (ask BEFORE status)
 > "จะใช้ mode ไหน?"
@@ -83,9 +82,9 @@ tell the user in Thai that the id was not found in that table.
   > "จะปรับเป็นสถานะอะไร? (webhook mode รองรับแค่ 2 สถานะนี้ — status อื่นต้องใช้ direct mode)"
   > options: `successful` / `failed`
 
-If the user asks for `pending` / `expired` / `reversed` in webhook mode, tell them in
-Thai that test cards cannot produce those statuses through a charge and offer to do it
-in **direct** mode instead.
+If the user asks for `pending` / `expired` / `reversed` in webhook mode, tell them in Thai
+that test cards cannot produce those statuses through a charge, and offer **direct** mode
+instead.
 
 ## Step 5 — Resolve the environment (always, before mutating)
 
@@ -100,175 +99,57 @@ in **direct** mode instead.
    ```bash
    docker exec -i <container> sh -lc 'php artisan tinker' <<< 'echo config("app.env");'
    ```
-   If the env is **not** `local`, **STOP** and warn the user in Thai that the
-   environment is not local so no data will be changed. Only continue if the user
-   explicitly passed `--force`.
+   If the env is **not** `local`, **STOP** and warn the user in Thai that the environment
+   is not local so no data will be changed. Only continue if the user explicitly passed
+   `--force`.
 
-## Step 6 — Direct mode (default)
+## Step 6 — Run the chosen mode
 
-Write this script to a temp file, substituting `__TARGET_ID__`, `__ID_TYPE__`
-(`link` or `txn`), and `__STATUS__`. Copy it into the container and run it via
-**stdin** (`php artisan tinker < file` — passing the file as an argument does NOT
-execute it).
+The scripts read their inputs from **environment variables** passed via `docker exec -e`,
+so you never edit the script files — just set the vars. Copy the script into the container
+once, then run it through tinker over **stdin** (`php artisan tinker < file` — passing the
+file as an argument does NOT execute it).
 
-```php
-$idType   = '__ID_TYPE__';   // 'link' or 'txn'
-$targetId = '__TARGET_ID__';
-$status   = '__STATUS__';     // successful|pending|failed|expired|reversed
+### Direct mode (default)
 
-use App\Models\PaymentLink;
-use App\Models\PaymentTransaction;
+Uses `scripts/summon_direct.php`. In **link** mode it flips the link's latest transaction
+(creating one if none exists); in **txn** mode it flips that exact transaction and derives
+its link.
 
-if ($idType === 'link') {
-    $pl = PaymentLink::find($targetId);
-    if (!$pl) { echo "ERR=link_not_found\n"; return; }
-    $txn = PaymentTransaction::where('model_type', PaymentLink::class)
-        ->where('model_id', $pl->id)->orderByDesc('created_at')->first();
-} else {
-    $txn = PaymentTransaction::find($targetId);
-    if (!$txn) { echo "ERR=txn_not_found\n"; return; }
-    $pl = $txn->model; // the linked PaymentLink
-}
-
-$prev = $txn->status ?? null;
-
-// idempotency: link already paid and asked to pay again -> no-op
-if ($status === 'successful' && $prev === 'successful') {
-    echo "NOOP=already_successful TXN_ID={$txn->id}\n";
-    if ($pl) echo "LINK_STATUS={$pl->status} USAGE={$pl->current_usage_count}/{$pl->max_usage_count}\n";
-    return;
-}
-
-if (!$txn) {
-    // link mode with no transaction yet -> create one
-    $txn = PaymentTransaction::create([
-        'user_id'          => $pl->user_id,
-        'customer_name'    => $pl->customer_name,
-        'model_type'       => PaymentLink::class,
-        'model_id'         => $pl->id,
-        'method'           => 'credit',
-        'amount'           => $pl->price,
-        'net'              => $pl->price,
-        'status'           => $status,
-        'paid_at'          => $status === 'successful' ? now() : null,
-        'transaction_date' => now(),
-        'source'           => 'backoffice',
-    ]);
-} else {
-    // flip the existing transaction
-    $txn->status  = $status;
-    if ($status === 'successful' && empty($txn->paid_at)) $txn->paid_at = now();
-    $txn->save();
-}
-
-// derive link: only a real transition INTO successful increments usage
-if ($pl && $status === 'successful' && $prev !== 'successful') {
-    $pl->incrementUsage();
-    $pl->refresh();
-}
-
-echo "TXN_ID={$txn->id} TXN_STATUS={$txn->status}\n";
-if ($pl) echo "LINK_ID={$pl->id} LINK_STATUS={$pl->status} USAGE={$pl->current_usage_count}/{$pl->max_usage_count}\n";
-```
-
-Run:
 ```bash
-docker cp /tmp/summon.php <container>:/tmp/summon.php
-docker exec -i <container> sh -lc 'php artisan tinker < /tmp/summon.php'
+docker cp scripts/summon_direct.php <container>:/tmp/summon_direct.php
+docker exec \
+  -e SUMMON_ID_TYPE=<link|txn> \
+  -e SUMMON_TARGET_ID=<uuid> \
+  -e SUMMON_STATUS=<successful|pending|failed|expired|reversed> \
+  -i <container> sh -lc 'php artisan tinker < /tmp/summon_direct.php'
 ```
 
-## Step 7 — Webhook mode (`successful` / `failed` only)
+The script prints `TXN_ID=… TXN_STATUS=…` and `LINK_ID=… LINK_STATUS=… USAGE=n/m`
+(or `NOOP=already_successful` / `ERR=…`). Use that for the Step 7 report.
 
-This drives the **real** Omise webhook path: create a real Omise test charge, then
-POST its event to the backoffice webhook. The webhook handler re-fetches the event
-from Omise, so it works locally without ngrok.
+### Webhook mode (`successful` / `failed` only)
 
-Pick the test card by the requested status:
+This drives the real Omise webhook path. **Read `references/webhook.md`** for the test
+cards, the curl POST to `/api/webhook/omise`, the ngrok notes, and the expected local
+HTTP 400 caveat — then:
 
-| Status | Test card | Result |
-|---|---|---|
-| `successful` | `4242424242424242` | charge `successful` |
-| `failed` | `4111111111140011` | charge `failed` (failure_code `insufficient_fund`) |
-
-1. **Create a pending transaction + Omise charge** (substitute the link id; in txn
-   mode reuse the given transaction id as `payment_transaction_id`). Run via stdin:
-
-   ```php
-   use App\Models\PaymentLink;
-   use App\Models\PaymentTransaction;
-
-   $pl   = PaymentLink::find('__LINK_ID__');
-   $card = '__TEST_CARD__'; // 4242424242424242 (successful) | 4111111111140011 (failed)
-   if (!$pl) { echo "ERR=link_not_found\n"; return; }
-
-   $txn = PaymentTransaction::create([
-       'user_id' => $pl->user_id, 'customer_name' => $pl->customer_name,
-       'model_type' => PaymentLink::class, 'model_id' => $pl->id,
-       'method' => 'credit', 'amount' => $pl->price, 'net' => $pl->price,
-       'status' => 'pending', 'transaction_date' => now(), 'source' => 'backoffice',
-   ]);
-
-   $token = \OmiseToken::create(['card' => [
-       'name' => 'Test', 'number' => $card,
-       'expiration_month' => 12, 'expiration_year' => 2030, 'security_code' => '123',
-   ]]);
-   $charge = \OmiseCharge::create([
-       'amount' => intval($pl->price) * 100, 'currency' => 'thb', 'card' => $token['id'],
-       'metadata' => [
-           'model_type' => PaymentLink::class, 'model_id' => $pl->id,
-           'payment_transaction_id' => $txn->id, 'is_subscription' => false, 'point' => 0,
-       ],
-   ]);
-   echo "TXN_ID={$txn->id}\nCHARGE_ID={$charge['id']}\nCHARGE_STATUS={$charge['status']}\n";
-   ```
-
-2. **Find the Omise event id** for that charge (poll a few times — events are async):
-
-   ```php
-   $chargeId = '__CHARGE_ID__'; $found = null;
-   for ($i = 0; $i < 5; $i++) {
-       foreach (\OmiseEvent::retrieve()['data'] as $e) {
-           if (($e['data']['object'] ?? null) === 'charge' && ($e['data']['id'] ?? null) === $chargeId) {
-               if (($e['key'] ?? '') === 'charge.complete') { $found = $e; break 2; }
-               if (!$found) $found = $e;
-           }
-       }
-       if ($found) break; sleep(2);
-   }
-   echo $found ? "EVENT_ID={$found['id']}\n" : "EVENT_NOT_FOUND\n";
-   ```
-
-3. **POST the event to the backoffice webhook.** Discover the published host port for
-   container port 80, then POST:
-
-   ```bash
-   PORT=$(docker port <container> 80/tcp | head -1 | sed 's/.*://')
-   curl -s -w "\nHTTP=%{http_code}\n" -X POST "http://localhost:${PORT}/api/webhook/omise" \
-     -H 'Content-Type: application/json' \
-     -d '{"object":"event","id":"__EVENT_ID__"}'
-   ```
-
-   To instead exercise an external ngrok delivery, POST to the ngrok URL — but the
-   ngrok tunnel must forward to the **backoffice** port (the one above), not to
-   wpe-service. (Omise's webhook lives on the backoffice; wpe-service only has
-   `/api/webhook/payment`.)
-
-### Known local caveat (state still lands correctly)
-On a `successful` charge the webhook returns **HTTP 400** locally because
-`updateOmisePayment` calls `PointService`, which needs a `reward` DB connection that
-local does not have:
+```bash
+docker cp scripts/summon_webhook.php <container>:/tmp/summon_webhook.php
+docker exec \
+  -e SUMMON_LINK_ID=<uuid> \
+  -e SUMMON_STATUS=<successful|failed> \
+  -i <container> sh -lc 'php artisan tinker < /tmp/summon_webhook.php'
+# (txn mode: also pass -e SUMMON_TXN_ID=<uuid> to reuse an existing pending transaction)
 ```
-database "reward" does not exist (Connection: reward, ... point_profiles ...)
-```
-The important writes (transaction → successful, `incrementUsage()` → link `done`)
-commit **before** that exception, so the result is still correct. A `failed` charge
-does not reach `PointService`, so it usually returns 200. Tell the user this in Thai
-if a 400 appears — it is expected, not a failure of the skill.
 
-## Step 8 — Verify and report
+The script prints `TXN_ID`, `CHARGE_ID`, `CHARGE_STATUS`, and `EVENT_ID`. POST that
+`EVENT_ID` to the webhook as described in `references/webhook.md`.
 
-After either mode, read back the final state and report it to the user **in Thai**
-(a small before → after summary): the transaction status, the link status, and
+## Step 7 — Verify and report
+
+After either mode, read back the final state and report it to the user **in Thai** (a small
+before → after summary): the transaction status, the link status, and
 `current_usage_count / max_usage_count`. You can confirm directly from the DB:
 
 ```bash
@@ -277,15 +158,3 @@ docker exec <pg_container> psql -U sail -d horoacademy-backoffice -c \
 ```
 (`<pg_container>` = the backoffice postgres container, e.g. discovered via
 `docker ps --filter name=backoffice-pgsql`.)
-
-## Webhook mode prerequisites (reference)
-
-- Omise **test** keys configured in the backoffice `.env`
-  (`OMISE_PUBLIC_KEY=pkey_test_…`, `OMISE_SECRET_KEY=skey_test_…`).
-- Posting locally to `http://localhost:<backoffice-port>/api/webhook/omise` needs
-  nothing else — the handler re-fetches the event from Omise.
-- For real Omise dashboard delivery: run `ngrok http <backoffice-port>` and register
-  that URL under Omise Dashboard → Webhooks. (Common mistake: pointing ngrok at the
-  wpe-service port instead of the backoffice port.)
-- A 200 response additionally requires a working `reward` DB connection in local;
-  without it you get the 400 described above (data still lands).
