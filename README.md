@@ -28,6 +28,7 @@ npx skills add thannnp/back-skills --skill horo-db
 |---|---|
 | `horo-db` | Assistant for answering questions about the structure and relationships of the two horoacademy databases (`horoacademy-backoffice` and `horoacademy-wpe-service`) — which tables exist, what columns they have, how they relate, cross-DB references, and polymorphic relations. |
 | `horo-summon-money` | Local-only testing helper that forces the payment status of a payment link or payment transaction (`successful` / `pending` / `failed` / `expired` / `reversed`). Accepts either a payment-link id or a transaction id; supports a direct (tinker) mode and a real Omise webhook mode. Only touches payment state — does not notify wpe-service. |
+| `horo-bazi` | Reference assistant for the Chinese astrology (Bazi / ปาจื้อ / ดวงจีน) rule set used by horoacademy — stems/branches tables, chart construction, day-master strength scoring, favorable elements, stem/branch interactions (ฮะ ชง คัก เฮ้ง ไห่ ผั่ว ซาฮะ ซาหุย หลักฮะ), ten gods, auspicious stars, luck cycles (วัยจร), and flying stars (ซำง้วน). Transcribed from the "วิชาดวงจีน 1" course document; intended both for answering questions and for implementing calculation features (e.g. CoupleMatching). |
 
 ## Repo structure
 
@@ -38,8 +39,17 @@ back-skills/
     │   ├── SKILL.md                              # instructions (English; replies to the user in Thai)
     │   ├── HORO_BACKOFFICE_DATABASE_DIAGRAM.md   # Mermaid ER diagram — backoffice
     │   └── WPE_SERVICE_DATABASE_DIAGRAM.md       # Mermaid ER diagram — wpe-service
-    └── horo-summon-money/
-        └── SKILL.md                              # instructions (English; asks the user in Thai)
+    ├── horo-summon-money/
+    │   └── SKILL.md                              # instructions (English; asks the user in Thai)
+    └── horo-bazi/
+        ├── SKILL.md                              # instructions (English; replies to the user in Thai)
+        └── references/
+            ├── 01-pillars.md                     # elements, stems, branches, month/hour pillar tables
+            ├── 02-day-master.md                  # strength scoring, favorable elements, HL rules
+            ├── 03-interactions.md                # ฮะ คัก ชง เฮ้ง ไห่ ผั่ว ซาฮะ ซาหุย หลักฮะ, hidden elements
+            ├── 04-ten-gods-stars.md              # ten gods, auspicious stars, directions
+            ├── 05-luck-cycles.md                 # luck pillars (วัยจร)
+            └── 06-flying-stars.md                # ซำง้วน 9 stars, month/hour stars, 64 gua
 ```
 
 To add a new skill, create `skills/<name>/SKILL.md` and `npx skills` will discover it automatically.
